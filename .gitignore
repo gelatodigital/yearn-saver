@@ -1,0 +1,16 @@
+# Dependency directory
+node_modules
+
+# local env variables
+.env
+
+#buidler
+artifacts/
+cache/
+
+# macOS
+.DS_Store
+*.icloud
+
+# yarn
+yarn-error.log
