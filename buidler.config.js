@@ -33,6 +33,7 @@ module.exports = {
       ConnectCompound: "0x07F81230d73a78f63F0c2A3403AD281b067d28F8",
       DAI: "0x6b175474e89094c44da98b954eedeac495271d0f",
       DAI_UNISWAP: "0x2a1530C4C41db0B0b2bB646CB5Eb1A67b7158667",
+      CDAI: "0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643",
     },
   },
   solc: {

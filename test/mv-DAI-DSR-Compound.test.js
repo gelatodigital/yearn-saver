@@ -145,11 +145,12 @@ describe("Move DAI lending from DSR to Compound", function () {
 
     // Deploy Mocks for Testing
     const MockCDAI = await ethers.getContractFactory("MockCDAI");
-    mockCDAI = await MockCDAI.deploy();
+    mockCDAI = await MockCDAI.deploy(APY_2_PERCENT_IN_SECONDS);
     await providerModuleDSA.deployed();
 
     const MockDSR = await ethers.getContractFactory("MockDSR");
-    mockDSR = await MockDSR.deploy();
+    mockDSR = await MockDSR.deploy(APY_2_PERCENT_IN_SECONDS);
+    await mockDSR.deployed();
 
     // Deploy Gelato Conditions for Testing
     const ConditionCompareUintsFromTwoSources = await ethers.getContractFactory(
@@ -207,7 +208,7 @@ describe("Move DAI lending from DSR to Compound", function () {
     // ======= Condition setup ======
     // We instantiate the Rebalance Condition:
     // Compound APY needs to be 10000000 per second points higher than DSR
-    const MIN_SPREAD = 10000000;
+    const MIN_SPREAD = "10000000";
     const rebalanceCondition = new GelatoCoreLib.Condition({
       inst: conditionCompareUints.address,
       data: await conditionCompareUints.getConditionData(
@@ -321,6 +322,9 @@ describe("Move DAI lending from DSR to Compound", function () {
     expect(await gelatoCore.providerFunds(dsa.address)).to.be.gte(
       TASK_AUTOMATION_FUNDS
     );
+    expect(
+      await gelatoCore.isProviderLiquid(dsa.address, GAS_LIMIT, GAS_PRICE_CEIL)
+    );
     expect(await gelatoCore.executorByProvider(dsa.address)).to.be.equal(
       userAddress
     );
@@ -328,6 +332,79 @@ describe("Move DAI lending from DSR to Compound", function () {
       await gelatoCore.isModuleProvided(dsa.address, providerModuleDSA.address)
     ).to.be.true;
 
-    // ======= TASK SUBMISSION =========
+    // ======= 📣 TASK SUBMISSION 📣 =========
+    // In Gelato world our DSA is the User. So we must submit the Task
+    // to Gelato via our DSA and hence use ConnectGelato again.
+    const expiryDate = 0;
+    await expect(
+      dsa.cast(
+        [connectGelato.address], // targets
+        [
+          await bre.run("abi-encode-withselector", {
+            abi: require("../artifacts/ConnectGelato.json").abi,
+            functionname: "submitTask",
+            inputs: [
+              gelatoSelfProvider,
+              taskRebalanceDSRToCDAIifBetter,
+              expiryDate,
+            ],
+          }),
+        ], // datas
+        userAddress, // origin
+        {
+          gasLimit: 5000000,
+        }
+      )
+    ).to.emit(gelatoCore, "LogTaskSubmitted");
+
+    // Task Receipt: a successfully submitted Task in Gelato
+    // is wrapped in a TaskReceipt. For testing we instantiate the TaskReceipt
+    // for our to be submitted Task.
+    const taskReceiptId = await gelatoCore.currentTaskReceiptId();
+    const taskReceipt = new GelatoCoreLib.TaskReceipt({
+      id: taskReceiptId,
+      userProxy: dsa.address,
+      provider: gelatoSelfProvider,
+      tasks: [taskRebalanceDSRToCDAIifBetter],
+      expiryDate,
+    });
+
+    // ======= 📣 TASK EXECUTION 📣 =========
+    // This stuff is normally automated by the Gelato Network and Dapp Developers
+    // and their Users don't have to take care of it. However, for local testing
+    // we simulate the Gelato Execution logic.
+
+    // Let's first check if our Task is executable. Since both MockDSR and MockCDAI
+    // start with a normalized per second rate of APY_2_PERCENT_IN_SECONDS
+    // (1000000000627937192491029810 in 10**27 precision) in both of them
+    expect(
+      await gelatoCore.canExec(taskReceipt, GAS_LIMIT, GAS_PRICE_CEIL)
+    ).to.be.equal("ConditionNotOk:ANotGreaterOrEqualToBbyMinspread");
+
+    // We defined a MIN_SPREAD of 10000000 points in the per second rate
+    // for our ConditionCompareUintsFromTwoSources. So we now
+    // set the CDAI.supplyRatePerSecond to be 10000000 higher than MockDSR.dsr
+    // and expect it to mean that our Task becomes executable.
+    await mockCDAI.setSupplyRatePerSecond(
+      (await mockDSR.dsr()).add(MIN_SPREAD)
+    );
+    expect(
+      await gelatoCore.canExec(taskReceipt, GAS_LIMIT, GAS_PRICE_CEIL)
+    ).to.be.equal("OK");
+
+    // To verify whether the execution of DSR=>CDAI has been successful in this Testing
+    // we look at changes in the CDAI balance of the DSA
+    const cDAI = await ethers.getContractAt(
+      IERC20.abi,
+      bre.network.config.CDAI
+    );
+    const dsaCDAIBefore = await cDAI.balanceOf(dsa.address);
+
+    // For testing we now simulate automatic Task Execution ❗
+    await expect(gelatoCore.exec(taskReceipt)).to.emit("LogExecSuccess");
+
+    // Since the Execution was successful, we now expect our DSA to hold more
+    // CDAI then before. This concludes our testing.
+    expect(await cDAI.balanceOf(dsa.address)).to.be.gt(dsaCDAIBefore);
   });
 });
