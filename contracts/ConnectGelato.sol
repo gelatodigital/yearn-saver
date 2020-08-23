@@ -67,7 +67,7 @@ contract ConnectGelato is ConnectorInterface {
         TaskSpec[] calldata _taskSpecs,
         IGelatoProviderModule[] calldata _modules
     )
-        external
+        public
         payable
         delegatecallOnly("ConnectGelato.multiProvide")
     {
@@ -88,7 +88,7 @@ contract ConnectGelato is ConnectorInterface {
         Task calldata _task,
         uint256 _expiryDate
     )
-        external
+        public
         delegatecallOnly("ConnectGelato.submitTask")
     {
         try IGelatoCore(gelatoCore).submitTask(_provider, _task, _expiryDate) {

@@ -4,11 +4,12 @@ const { expect } = require("chai");
 const bre = require("@nomiclabs/buidler");
 const { ethers } = bre;
 const GelatoCoreLib = require("@gelatonetwork/core");
+const { sleep } = GelatoCoreLib;
 
 // Constants
 const INSTA_MASTER = "0xfCD22438AD6eD564a1C26151Df73F6B33B817B56";
-const ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 const DAI_100 = ethers.utils.parseUnits("100", 18);
+const APY_2_PERCENT_IN_SECONDS = 1000000000627937192491029810;
 
 // Contracts
 const InstaIndex = require("../pre-compiles/InstaIndex.json");
@@ -41,6 +42,11 @@ describe("Move DAI lending from DSR to Compound", function () {
 
   // Contracts to deploy and use for local testing
   let dsa;
+  let mockDSR;
+  let mockCDAI;
+  let conditionCompareUints;
+  let conditionHasBalanceAndAllowance;
+  let connectGelato;
 
   before(async function () {
     // Get Test Wallet for local testnet
@@ -113,10 +119,7 @@ describe("Move DAI lending from DSR to Compound", function () {
     const connectorId = connectorLength.add(1);
 
     const ConnectGelato = await ethers.getContractFactory("ConnectGelato");
-    const connectGelato = await ConnectGelato.deploy(
-      connectorId,
-      gelatoCore.address
-    );
+    connectGelato = await ConnectGelato.deploy(connectorId, gelatoCore.address);
     await connectGelato.deployed();
 
     // Enable ConnectGelato on InstaConnectors via InstaMaster multisig
@@ -139,6 +142,27 @@ describe("Move DAI lending from DSR to Compound", function () {
       gelatoCore.address
     );
     await providerModuleDSA.deployed();
+
+    // Deploy Mocks for Testing
+    const MockCDAI = await ethers.getContractFactory("MockCDAI");
+    mockCDAI = await MockCDAI.deploy();
+    await providerModuleDSA.deployed();
+
+    const MockDSR = await ethers.getContractFactory("MockDSR");
+    mockDSR = await MockDSR.deploy();
+
+    // Deploy Gelato Conditions for Testing
+    const ConditionCompareUintsFromTwoSources = await ethers.getContractFactory(
+      "ConditionCompareUintsFromTwoSources"
+    );
+    conditionCompareUints = await ConditionCompareUintsFromTwoSources.deploy();
+    await conditionCompareUints.deployed();
+
+    const ConditionHasBalanceAndAllowance = await ethers.getContractFactory(
+      "ConditionHasBalanceAndAllowance"
+    );
+    conditionHasBalanceAndAllowance = await ConditionHasBalanceAndAllowance.deploy();
+    await conditionHasBalanceAndAllowance.deployed();
 
     // ===== Dapp Dependencies SETUP ==================
     // This test assumes our user has 100 DAI deposited in Maker DSR
@@ -179,7 +203,131 @@ describe("Move DAI lending from DSR to Compound", function () {
     expect(await dai.balanceOf(dsa.address)).to.be.eq(0);
   });
 
-  it("#1: Deploys a DSA with user as authority", async function () {
-    expect(await dsa.isAuth(userAddress)).to.be.true;
+  it("#1: Gelato refinances DAI from DSR=>Compound, if better rate", async function () {
+    // ======= Condition setup ======
+    // We instantiate the Rebalance Condition:
+    // Compound APY needs to be 10000000 per second points higher than DSR
+    const MIN_SPREAD = 10000000;
+    const rebalanceCondition = new GelatoCoreLib.Condition({
+      inst: conditionCompareUints.address,
+      data: await conditionCompareUints.getConditionData(
+        mockDSR.address,
+        mockCDAI.address,
+        await bre.run("abi-encode-withselector", {
+          abi: require("../artifacts/MockDSR.json").abi,
+          functionname: "dsr",
+        }),
+        await bre.run("abi-encode-withselector", {
+          abi: require("../artifacts/MockCDAI.json").abi,
+          functionname: "supplyRatePerSecond",
+        }),
+        MIN_SPREAD
+      ),
+    });
+
+    // ======= Action/Spells setup ======
+    // To assimilate to DSA SDK
+    const spells = [];
+
+    // We instantiate target1: Withdraw DAI from DSR and setId 1 for
+    // target2 Compound deposit to fetch DAI amount.
+    const connectorWithdrawFromDSR = new GelatoCoreLib.Action({
+      addr: connectMaker.address,
+      data: await bre.run("abi-encode-withselector", {
+        abi: ConnectMaker.abi,
+        functionname: "withdrawDai",
+        inputs: [ethers.constants.MaxUint256, 0, 1],
+      }),
+      operation: GelatoCoreLib.Operation.Delegatecall,
+    });
+    spells.push(connectorWithdrawFromDSR);
+
+    // We instantiate target2: Deposit DAI to CDAI and getId 1
+    const connectorDepositCompound = new GelatoCoreLib.Action({
+      addr: connectCompound.address,
+      data: await bre.run("abi-encode-withselector", {
+        abi: ConnectCompound.abi,
+        functionname: "deposit",
+        inputs: [dai.address, 0, 1, 0],
+      }),
+      operation: GelatoCoreLib.Operation.Delegatecall,
+    });
+    spells.push(connectorDepositCompound);
+
+    // ======= Gelato Task Setup =========
+    // A Gelato Task just combines Conditions with Actions
+    // You also specify how much GAS a Task consumes at max and the ceiling
+    // gas price under which you are willing to auto-transact. There is only
+    // one gas price in the current Gelato system: fast gwei read from Chainlink.
+    const GAS_LIMIT = "4000000";
+    const GAS_PRICE_CEIL = ethers.utils.parseUnits("400", "gwei");
+    const taskRebalanceDSRToCDAIifBetter = new GelatoCoreLib.Task({
+      conditions: [rebalanceCondition],
+      actions: spells,
+      selfProviderGasLimit: GAS_LIMIT,
+      selfProviderGasPriceCeil: GAS_PRICE_CEIL,
+    });
+
+    // ======= Gelato Provider setup ======
+    // Someone needs to pay for gas for automatic Task execution on Gelato.
+    // Gelato has the concept of a "Provider" to denote who is providing (depositing)
+    // ETH on Gelato in order to pay for automation gas. In our case, the User
+    // is paying for his own automation gas. Therefore, the User is a "Self-Provider".
+    // But since Gelato only talks to smart contract accounts, the User's DSA proxy
+    // plays the part of the "Self-Provider" on behalf of the User behind the DSA.
+    // A GelatoProvider is an object with the address of the provider - in our case
+    // the DSA address - and the address of the "ProviderModule". This module
+    // fulfills certain functions like encoding the execution payload for the Gelato
+    // protocol. Check out ./contracts/ProviderModuleDSA.sol to see what it does.
+    const gelatoSelfProvider = new GelatoCoreLib.GelatoProvider({
+      addr: dsa.address,
+      module: providerModuleDSA.address,
+    });
+
+    // ======= Executor Setup =========
+    // For local Testing purposes our test User account will play the role of the Gelato
+    // Executor network because this logic is non-trivial to fork into a local instance
+    await gelatoCore.stakeExecutor({
+      value: await gelatoCore.minExecutorStake(),
+    });
+    expect(await gelatoCore.isExecutorMinStaked(userAddress)).to.be.true;
+
+    // ======= Gelato Task Provision =========
+    // Gelato requires some initial setup via its multiProvide API
+    // We must 1) provide ETH to pay for future automation gas, 2) we must
+    // assign an Executor network to the Task, 3) we must tell Gelato what
+    // "ProviderModule" we want to use for our Task.
+    // Since our DSA proxy is the one through which we interact with Gelato,
+    // we must do this setup via the DSA proxy by using ConnectGelato
+    const TASK_AUTOMATION_FUNDS = await gelatoCore.minExecProviderFunds(
+      GAS_LIMIT,
+      GAS_PRICE_CEIL
+    );
+    await dsa.cast(
+      [connectGelato.address], // targets
+      [
+        await bre.run("abi-encode-withselector", {
+          abi: require("../artifacts/ConnectGelato.json").abi,
+          functionname: "multiProvide",
+          inputs: [userAddress, [], [providerModuleDSA.address]],
+        }),
+      ], // datas
+      userAddress, // origin
+      {
+        value: TASK_AUTOMATION_FUNDS,
+        gasLimit: 5000000,
+      }
+    );
+    expect(await gelatoCore.providerFunds(dsa.address)).to.be.gte(
+      TASK_AUTOMATION_FUNDS
+    );
+    expect(await gelatoCore.executorByProvider(dsa.address)).to.be.equal(
+      userAddress
+    );
+    expect(
+      await gelatoCore.isModuleProvided(dsa.address, providerModuleDSA.address)
+    ).to.be.true;
+
+    // ======= TASK SUBMISSION =========
   });
 });
