@@ -1,5 +1,7 @@
 # gelato-instadapp
 
+[![gelatodigital](https://circleci.com/gh/gelatodigital/gelato-instadapp.svg?style=shield)](https://circleci.com/gh/gelatodigital/gelato-instadapp)
+
 <p  align="center">
 <img  src="assets/instadapp_filled.svg"  width="150px"/>
 <img  src="assets/Gelato_Black.svg"  width="150px"/></p>
