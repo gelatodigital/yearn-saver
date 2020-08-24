@@ -9,7 +9,9 @@ const { sleep } = GelatoCoreLib;
 // Constants
 const INSTA_MASTER = "0xfCD22438AD6eD564a1C26151Df73F6B33B817B56";
 const DAI_100 = ethers.utils.parseUnits("100", 18);
-const APY_2_PERCENT_IN_SECONDS = 1000000000627937192491029810;
+const APY_2_PERCENT_IN_SECONDS = ethers.BigNumber.from(
+  "1000000000627937192491029810"
+);
 
 // Contracts
 const InstaIndex = require("../pre-compiles/InstaIndex.json");
@@ -45,7 +47,6 @@ describe("Move DAI lending from DSR to Compound", function () {
   let mockDSR;
   let mockCDAI;
   let conditionCompareUints;
-  let conditionHasBalanceAndAllowance;
   let connectGelato;
 
   before(async function () {
@@ -55,8 +56,8 @@ describe("Move DAI lending from DSR to Compound", function () {
     const instaMaster = await ethers.provider.getSigner(INSTA_MASTER);
 
     // Ganache default accounts prefilled with 100 ETH
-    expect(await userWallet.getBalance()).to.be.equal(
-      ethers.utils.parseEther("100")
+    expect(await userWallet.getBalance()).to.be.gt(
+      ethers.utils.parseEther("10")
     );
 
     // ===== DSA SETUP ==================
@@ -159,12 +160,6 @@ describe("Move DAI lending from DSR to Compound", function () {
     conditionCompareUints = await ConditionCompareUintsFromTwoSources.deploy();
     await conditionCompareUints.deployed();
 
-    const ConditionHasBalanceAndAllowance = await ethers.getContractFactory(
-      "ConditionHasBalanceAndAllowance"
-    );
-    conditionHasBalanceAndAllowance = await ConditionHasBalanceAndAllowance.deploy();
-    await conditionHasBalanceAndAllowance.deployed();
-
     // ===== Dapp Dependencies SETUP ==================
     // This test assumes our user has 100 DAI deposited in Maker DSR
     dai = await ethers.getContractAt(IERC20.abi, bre.network.config.DAI);
@@ -212,16 +207,16 @@ describe("Move DAI lending from DSR to Compound", function () {
     const rebalanceCondition = new GelatoCoreLib.Condition({
       inst: conditionCompareUints.address,
       data: await conditionCompareUints.getConditionData(
-        mockDSR.address,
-        mockCDAI.address,
-        await bre.run("abi-encode-withselector", {
-          abi: require("../artifacts/MockDSR.json").abi,
-          functionname: "dsr",
-        }),
+        mockCDAI.address, // We are in DSR so we compare against CDAI => SourceA=CDAI
+        mockDSR.address, // SourceB=DSR
         await bre.run("abi-encode-withselector", {
           abi: require("../artifacts/MockCDAI.json").abi,
           functionname: "supplyRatePerSecond",
-        }),
+        }), // CDAI data feed first (sourceAData)
+        await bre.run("abi-encode-withselector", {
+          abi: require("../artifacts/MockDSR.json").abi,
+          functionname: "dsr",
+        }), // DSR data feed second (sourceBData)
         MIN_SPREAD
       ),
     });
@@ -401,7 +396,13 @@ describe("Move DAI lending from DSR to Compound", function () {
     const dsaCDAIBefore = await cDAI.balanceOf(dsa.address);
 
     // For testing we now simulate automatic Task Execution ❗
-    await expect(gelatoCore.exec(taskReceipt)).to.emit("LogExecSuccess");
+    const gelatoGasPrice = await bre.run("fetchGelatoGasPrice");
+    await expect(
+      gelatoCore.exec(taskReceipt, {
+        gasPrice: gelatoGasPrice, // Exectutor must use gelatoGasPrice (Chainlink fast gwei)
+        gasLimit: taskRebalanceDSRToCDAIifBetter.selfProviderGasLimit,
+      })
+    ).to.emit(gelatoCore, "LogExecSuccess");
 
     // Since the Execution was successful, we now expect our DSA to hold more
     // CDAI then before. This concludes our testing.
