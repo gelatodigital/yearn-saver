@@ -1,7 +1,7 @@
 {
   "name": "gelato-instadapp",
   "version": "1.0.0",
-  "description": "The smart contract and tests for automatic CHI token buying",
+  "description": "The smart contract and tests for gelato-instadapp prototypes",
   "repository": "https://github.com/gelatodigital/gelato-instadapp",
   "author": "gitpusha",
   "private": false,

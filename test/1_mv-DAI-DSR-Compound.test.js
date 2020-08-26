@@ -371,7 +371,10 @@ describe("Move DAI lending from DSR to Compound", function () {
 
     // Let's first check if our Task is executable. Since both MockDSR and MockCDAI
     // start with a normalized per second rate of APY_2_PERCENT_IN_SECONDS
-    // (1000000000627937192491029810 in 10**27 precision) in both of them
+    // (1000000000627937192491029810 in 10**27 precision) in both of them, we
+    // expect ConditionNotOk because ANotGreaterOrEqualToBbyMinspread.
+    // Check out contracts/ConditionCompareUintsFromTwoSources.sol to see how
+    // how the comparison of MockDSR and MockCDAI is implemented in Condition code.
     expect(
       await gelatoCore.canExec(taskReceipt, GAS_LIMIT, GAS_PRICE_CEIL)
     ).to.be.equal("ConditionNotOk:ANotGreaterOrEqualToBbyMinspread");
