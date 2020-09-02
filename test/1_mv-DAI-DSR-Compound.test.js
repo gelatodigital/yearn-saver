@@ -147,7 +147,7 @@ describe("Move DAI lending from DSR to Compound", function () {
     // Deploy Mocks for Testing
     const MockCDAI = await ethers.getContractFactory("MockCDAI");
     mockCDAI = await MockCDAI.deploy(APY_2_PERCENT_IN_SECONDS);
-    await providerModuleDSA.deployed();
+    await mockCDAI.deployed();
 
     const MockDSR = await ethers.getContractFactory("MockDSR");
     mockDSR = await MockDSR.deploy(APY_2_PERCENT_IN_SECONDS);
