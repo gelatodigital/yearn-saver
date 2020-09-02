@@ -256,7 +256,7 @@ describe("Move DAI lending from DSR to Compound", function () {
     // gas price under which you are willing to auto-transact. There is only
     // one gas price in the current Gelato system: fast gwei read from Chainlink.
     const GAS_LIMIT = "4000000";
-    const GAS_PRICE_CEIL = ethers.utils.parseUnits("400", "gwei");
+    const GAS_PRICE_CEIL = ethers.utils.parseUnits("1000", "gwei");
     const taskRebalanceDSRToCDAIifBetter = new GelatoCoreLib.Task({
       conditions: [rebalanceCondition],
       actions: spells,
@@ -369,6 +369,14 @@ describe("Move DAI lending from DSR to Compound", function () {
     // and their Users don't have to take care of it. However, for local testing
     // we simulate the Gelato Execution logic.
 
+    // First we fetch the gelatoGasPrice as fed by ChainLink oracle. Gelato
+    // allows Users to specify a maximum fast gwei gas price for their Tasks
+    // to remain executable up until.
+    const gelatoGasPrice = await bre.run("fetchGelatoGasPrice");
+    expect(gelatoGasPrice).to.be.lte(
+      taskRebalanceDSRToCDAIifBetter.selfProviderGasPriceCeil
+    );
+
     // Let's first check if our Task is executable. Since both MockDSR and MockCDAI
     // start with a normalized per second rate of APY_2_PERCENT_IN_SECONDS
     // (1000000000627937192491029810 in 10**27 precision) in both of them, we
@@ -376,7 +384,11 @@ describe("Move DAI lending from DSR to Compound", function () {
     // Check out contracts/ConditionCompareUintsFromTwoSources.sol to see how
     // how the comparison of MockDSR and MockCDAI is implemented in Condition code.
     expect(
-      await gelatoCore.canExec(taskReceipt, GAS_LIMIT, GAS_PRICE_CEIL)
+      await gelatoCore.canExec(
+        taskReceipt,
+        taskRebalanceDSRToCDAIifBetter.selfProviderGasLimit,
+        gelatoGasPrice
+      )
     ).to.be.equal("ConditionNotOk:ANotGreaterOrEqualToBbyMinspread");
 
     // We defined a MIN_SPREAD of 10000000 points in the per second rate
@@ -387,7 +399,11 @@ describe("Move DAI lending from DSR to Compound", function () {
       (await mockDSR.dsr()).add(MIN_SPREAD)
     );
     expect(
-      await gelatoCore.canExec(taskReceipt, GAS_LIMIT, GAS_PRICE_CEIL)
+      await gelatoCore.canExec(
+        taskReceipt,
+        taskRebalanceDSRToCDAIifBetter.selfProviderGasLimit,
+        gelatoGasPrice
+      )
     ).to.be.equal("OK");
 
     // To verify whether the execution of DSR=>CDAI has been successful in this Testing
@@ -399,7 +415,6 @@ describe("Move DAI lending from DSR to Compound", function () {
     const dsaCDAIBefore = await cDAI.balanceOf(dsa.address);
 
     // For testing we now simulate automatic Task Execution ❗
-    const gelatoGasPrice = await bre.run("fetchGelatoGasPrice");
     await expect(
       gelatoCore.exec(taskReceipt, {
         gasPrice: gelatoGasPrice, // Exectutor must use gelatoGasPrice (Chainlink fast gwei)
