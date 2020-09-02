@@ -17,16 +17,17 @@ import {
 } from "@gelatonetwork/core/contracts/provider_modules/IGelatoProviderModule.sol";
 import {Address} from  "@gelatonetwork/core/contracts/external/Address.sol";
 import {SafeMath} from "@gelatonetwork/core/contracts/external/SafeMath.sol";
+import {Stores} from "./instadapp/Stores.sol";
 
 interface ConnectorInterface {
-    function connectorID() external view returns(uint _type, uint _id);
     function name() external pure returns (string memory);
 }
 
 /// @title ConnectGelato
 /// @notice Allows InstaDapp DSA to enter and exit Gelato Network
+/// @dev Check out https://github.com/gelatodigital/gelato-kyber#how-gelato-works for an explanation
 /// @author gitpusha
-contract ConnectGelato is ConnectorInterface {
+contract ConnectGelato is ConnectorInterface, Stores {
 
     using Address for address payable;
     using SafeMath for uint256;
@@ -49,7 +50,7 @@ contract ConnectGelato is ConnectorInterface {
     }
 
     /// @dev _id must be InstaConnectors.connectorLength+1
-    function connectorID() external view override returns(uint _type, uint _id) {
+    function connectorID() public view override returns(uint _type, uint _id) {
         (_type, _id) = (1, id);
     }
 
@@ -62,16 +63,26 @@ contract ConnectGelato is ConnectorInterface {
     }
 
     // ===== Gelato ENTRY APIs ======
+
+    /**
+     * @dev Enables first time users to  pre-fund eth, whitelist an executor & register the
+     * ProviderModuleDSA.sol to be able to use Gelato
+     * @param _executor address of single execot node or gelato'S decentralized execution market
+     * @param _taskSpecs enables external providers to whitelist TaskSpecs on gelato
+     * @param _modules address of ProviderModuleDSA
+     * @param _ethToDeposit amount of eth to deposit on Gelato, only for self-providers
+    */
     function multiProvide(
         address _executor,
         TaskSpec[] calldata _taskSpecs,
-        IGelatoProviderModule[] calldata _modules
+        IGelatoProviderModule[] calldata _modules,
+        uint256 _ethToDeposit
     )
         public
         payable
         delegatecallOnly("ConnectGelato.multiProvide")
     {
-        try IGelatoProviders(gelatoCore).multiProvide{value: msg.value}(
+        try IGelatoProviders(gelatoCore).multiProvide{value: _ethToDeposit}(
             _executor,
             _taskSpecs,
             _modules
@@ -83,6 +94,13 @@ contract ConnectGelato is ConnectorInterface {
         }
     }
 
+    /**
+     * @dev Submits a single, one-time task to Gelato
+     * @param _provider Consists of proxy module address (DSA) and provider address ()
+     * who will pay for the transaction execution
+     * @param _task Task specifying the condition and the action connectors
+     * @param _expiryDate Default 0, othweise timestamp after which the task expires
+    */
     function submitTask(
         Provider calldata _provider,
         Task calldata _task,
@@ -99,11 +117,84 @@ contract ConnectGelato is ConnectorInterface {
         }
     }
 
+    /**
+     * @dev Submits single or mulitple Task Sequences to Gelato
+     * @param _provider Consists of proxy module address (DSA) and provider address ()
+     * who will pay for the transaction execution
+     * @param _tasks A sequence of Tasks, can be a single or multiples
+     * @param _expiryDate Default 0, othweise timestamp after which the task expires
+     * @param _cycles How often the Task List should be executed, e.g. 5 times
+    */
+    function submitTaskCycle(
+        Provider calldata _provider,
+        Task[] memory _tasks,
+        uint256 _expiryDate,
+        uint256 _cycles
+    )
+        public
+        delegatecallOnly("ConnectGelato.submitTaskCycle")
+    {
+        try IGelatoCore(gelatoCore).submitTaskCycle(
+            _provider,
+            _tasks,
+            _expiryDate,
+            _cycles
+        ) {
+        } catch Error(string memory error) {
+            revert(string(abi.encodePacked("ConnectGelato.submitTaskCycle:", error)));
+        } catch {
+            revert("ConnectGelato.submitTaskCycle: unknown error");
+        }
+    }
+
+    /**
+     * @dev Submits single or mulitple Task Chains to Gelato
+     * @param _provider Consists of proxy module address (DSA) and provider address ()
+     * who will pay for the transaction execution
+     * @param _tasks A sequence of Tasks, can be a single or multiples
+     * @param _expiryDate Default 0, othweise timestamp after which the task expires
+     * @param _sumOfRequestedTaskSubmits The TOTAL number of Task auto-submits
+     * that should have occured once the cycle is complete
+    */
+    function submitTaskChain(
+        Provider calldata _provider,
+        Task[] memory _tasks,
+        uint256 _expiryDate,
+        uint256 _sumOfRequestedTaskSubmits
+    )
+        public
+        delegatecallOnly("ConnectGelato.submitTaskChain")
+    {
+        try IGelatoCore(gelatoCore).submitTaskChain(
+            _provider,
+            _tasks,
+            _expiryDate,
+            _sumOfRequestedTaskSubmits
+        ) {
+        } catch Error(string memory error) {
+            revert(string(abi.encodePacked("ConnectGelato.submitTaskChain:", error)));
+        } catch {
+            revert("ConnectGelato.submitTaskChain: unknown error");
+        }
+    }
+
+
+
+
     // ===== Gelato EXIT APIs ======
+
+    /**
+     * @dev Withdraws funds from Gelato, de-whitelists TaskSpecs and Provider Modules
+     * in one tx
+     * @param _withdrawAmount Amount of ETH to withdraw from Gelato
+     * @param _taskSpecs List of Task Specs to de-whitelist, default empty []
+     * @param _modules List of Provider Modules to de-whitelist, default empty []
+    */
     function multiUnprovide(
         uint256 _withdrawAmount,
         TaskSpec[] memory _taskSpecs,
-        IGelatoProviderModule[] memory _modules
+        IGelatoProviderModule[] memory _modules,
+        uint256 _setId
     )
         external
         delegatecallOnly("ConnectGelato.multiUnprovide")
@@ -114,7 +205,7 @@ contract ConnectGelato is ConnectorInterface {
             _taskSpecs,
             _modules
         ) {
-            msg.sender.sendValue(address(this).balance.sub(balanceBefore));
+            setUint(_setId, address(this).balance.sub(balanceBefore));
         } catch Error(string memory error) {
             revert(string(abi.encodePacked("ConnectGelato.multiUnprovide:", error)));
         } catch {
@@ -122,6 +213,10 @@ contract ConnectGelato is ConnectorInterface {
         }
     }
 
+    /**
+     * @dev Cancels outstanding Tasks
+     * @param _taskReceipts List of Task Receipts to cancel
+    */
     function multiCancelTasks(TaskReceipt[] calldata _taskReceipts)
         external
         delegatecallOnly("ConnectGelato.multiCancelTasks")

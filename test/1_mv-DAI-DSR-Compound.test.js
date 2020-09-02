@@ -305,7 +305,12 @@ describe("Move DAI lending from DSR to Compound", function () {
         await bre.run("abi-encode-withselector", {
           abi: require("../artifacts/ConnectGelato.json").abi,
           functionname: "multiProvide",
-          inputs: [userAddress, [], [providerModuleDSA.address]],
+          inputs: [
+            userAddress,
+            [],
+            [providerModuleDSA.address],
+            TASK_AUTOMATION_FUNDS,
+          ],
         }),
       ], // datas
       userAddress, // origin
