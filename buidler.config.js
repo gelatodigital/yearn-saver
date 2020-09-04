@@ -20,9 +20,9 @@ module.exports = {
     ganache: {
       // Standard config
       url: "http://localhost:8545",
-      // fork: `https://mainnet.infura.io/v3/${INFURA_ID}`,
-      fork: `https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_ID}`,
-      // unlocked_accounts: [GELATO_EXEC_NETWORK],
+      fork: `https://mainnet.infura.io/v3/${INFURA_ID}`,
+      // fork: `https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_ID}`,
+      unlocked_accounts: [GELATO_EXEC_NETWORK],
       // Custom
       GelatoCore: "0x1d681d76ce96E4d70a88A00EBbcfc1E47808d0b8",
       StrategyMKRVaultDAIDelegate: "0x932fc4fd0eEe66F22f1E23fBA74D7058391c0b15",

@@ -26,25 +26,20 @@ describe("Setup", function () {
   let executor;
 
   before(async function () {
-    console.log("11121321");
     // Get Test Wallet for local testnet
     [userWallet, yearnDegan] = await ethers.getSigners();
-    console.log("dssd");
-    userAddress = await userWallet.getAddress();
-    console.log("111");
-    // executor = await ethers.provider.getSigner(
-    //   bre.network.config.GelatoExecNetwork
-    // );
 
-    console.log("1");
+    userAddress = await userWallet.getAddress();
+
+    executor = await ethers.provider.getSigner(
+      bre.network.config.GelatoExecNetwork
+    );
 
     // ===== GELATO LOCAL SETUP ==================
     gelatoCore = await ethers.getContractAt(
       GelatoCoreLib.GelatoCore.abi,
       bre.network.config.GelatoCore
     );
-
-    console.log("2");
 
     // Deploy ConditionYETHStratRepay to local testnet
     const ConditionYETHStratRepay = await ethers.getContractFactory(
@@ -55,14 +50,6 @@ describe("Setup", function () {
       gelatoCore.address
     );
     await conditionYETHStratRepay.deployed();
-
-    console.log("3");
-    console.log(
-      gelatoCore.address,
-      bre.network.config.StrategyMKRVaultDAIDelegate,
-      [bre.network.config.GelatoUserProxyProviderModule],
-      conditionYETHStratRepay.address
-    );
 
     // Deploy YearnSaverBot to local testnet
     const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot");
@@ -76,8 +63,6 @@ describe("Setup", function () {
       }
     );
     await yearnSaverBot.deployed();
-
-    console.log("4");
   });
 
   it("#1: Condition should return: 'ConditionYETHStratRepay: No repay necessary' if Strategy is sufficiently collateralized", async function () {
@@ -86,28 +71,28 @@ describe("Setup", function () {
     expect(result).to.be.equal(false);
   });
 
-  // it("#2: Random address can fund YearnSaverBot", async function () {
-  //   const yearnDeganEthBalance = await yearnDegan.provider.getBalance(
-  //     await yearnDegan.getAddress()
-  //   );
-  //   console.log(yearnDeganEthBalance.toString());
+  it("#2: Random address can fund YearnSaverBot", async function () {
+    const yearnDeganEthBalance = await yearnDegan.provider.getBalance(
+      await yearnDegan.getAddress()
+    );
+    console.log(yearnDeganEthBalance.toString());
 
-  //   const botGelatoBalancePre = await gelatoCore.providerFunds(
-  //     yearnSaverBot.address
-  //   );
-  //   console.log(botGelatoBalancePre.toString());
-  //   const newFunds = ethers.utils.parseEther("5");
-  //   const tx = await yearnSaverBot.connect(yearnDegan).provideFunds({
-  //     value: newFunds,
-  //   });
-  //   await tx.wait();
+    const botGelatoBalancePre = await gelatoCore.providerFunds(
+      yearnSaverBot.address
+    );
+    console.log(botGelatoBalancePre.toString());
+    const newFunds = ethers.utils.parseEther("5");
+    const tx = await yearnSaverBot.connect(yearnDegan).provideFunds({
+      value: newFunds,
+    });
+    await tx.wait();
 
-  //   const botGelatoBalancePost = await gelatoCore.providerFunds(
-  //     yearnSaverBot.address
-  //   );
-  //   console.log(botGelatoBalancePost.toString());
-  //   expect(botGelatoBalancePre.add(newFunds)).to.be.equal(botGelatoBalancePost);
-  // });
+    const botGelatoBalancePost = await gelatoCore.providerFunds(
+      yearnSaverBot.address
+    );
+    console.log(botGelatoBalancePost.toString());
+    expect(botGelatoBalancePre.add(newFunds)).to.be.equal(botGelatoBalancePost);
+  });
 
   it("#3: Test if action executes if condition returns true", async function () {
     // Deploy new Condition
