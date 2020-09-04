@@ -75,12 +75,10 @@ describe("Setup", function () {
     const yearnDeganEthBalance = await yearnDegan.provider.getBalance(
       await yearnDegan.getAddress()
     );
-    console.log(yearnDeganEthBalance.toString());
 
     const botGelatoBalancePre = await gelatoCore.providerFunds(
       yearnSaverBot.address
     );
-    console.log(botGelatoBalancePre.toString());
     const newFunds = ethers.utils.parseEther("5");
     const tx = await yearnSaverBot.connect(yearnDegan).provideFunds({
       value: newFunds,
@@ -90,7 +88,6 @@ describe("Setup", function () {
     const botGelatoBalancePost = await gelatoCore.providerFunds(
       yearnSaverBot.address
     );
-    console.log(botGelatoBalancePost.toString());
     expect(botGelatoBalancePre.add(newFunds)).to.be.equal(botGelatoBalancePost);
   });
 
@@ -100,22 +97,24 @@ describe("Setup", function () {
     const mockStrategy = await MockStrategy.deploy(0);
     await mockStrategy.deployed();
 
+    const ConditionYETHStratRepay2 = await ethers.getContractFactory(
+      "ConditionYETHStratRepay"
+    );
+    const conditionYETHStratRepay2 = await ConditionYETHStratRepay2.deploy(
+      mockStrategy.address,
+      gelatoCore.address
+    );
+    await conditionYETHStratRepay2.deployed();
+
     // Deploy new yearnSaver with Mock Strategy
     const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot");
-    yearnSaverBot = await YearnSaverBot.deploy(
+    const yearnSaverBot2 = await YearnSaverBot.deploy(
       gelatoCore.address,
       mockStrategy.address,
       [bre.network.config.GelatoUserProxyProviderModule],
-      conditionYETHStratRepay.address
+      conditionYETHStratRepay2.address
     );
-    await yearnSaverBot.deployed();
-
-    // fund yearnSaverBot
-    const newFunds = ethers.utils.parseEther("5");
-    const tx = await yearnSaverBot.connect(yearnDegan).provideFunds({
-      value: newFunds,
-    });
-    await tx.wait();
+    await yearnSaverBot2.deployed();
 
     const currentGelatoId = await gelatoCore.currentTaskReceiptId();
     // Get Task Receipt Object from event
@@ -133,9 +132,18 @@ describe("Setup", function () {
 
     let event = iface.parseLog(log);
 
-    const taskReceipt = event.args.taskReceipt[0];
+    const taskReceipt = event.args.taskReceipt;
 
-    console.log(taskReceipt);
+    console.log(taskReceipt.userProxy);
+
+    console.log(yearnSaverBot2.address);
+
+    // fund yearnSaverBot2
+    const newFunds = ethers.utils.parseEther("5");
+    const tx = await yearnSaverBot2.connect(yearnDegan).provideFunds({
+      value: newFunds,
+    });
+    await tx.wait();
 
     const gelatoGasPrice = await bre.run("fetchGelatoGasPrice");
 
@@ -144,13 +152,33 @@ describe("Setup", function () {
     // and their Users don't have to take care of it. However, for local testing
     // we simulate the Gelato Execution logic.
 
-    const canExecResult = await gelatoCore
+    let canExecResult = await gelatoCore
       .connect(executor)
       .canExec(
         taskReceipt,
         taskReceipt.tasks[0].selfProviderGasLimit,
         gelatoGasPrice
       );
+
+    console.log(canExecResult);
+
+    const setTx = await mockStrategy.setRepayAmount(
+      ethers.utils.parseUnits("100", "18")
+    );
+    await setTx.wait();
+
+    console.log(await mockStrategy.repayAmount());
+
+    canExecResult = await gelatoCore
+      .connect(executor)
+      .canExec(
+        taskReceipt,
+        taskReceipt.tasks[0].selfProviderGasLimit,
+        gelatoGasPrice
+      );
+
+    console.log(await executor.getAddress());
+    console.log(bre.network.config.GelatoExecNetwork);
 
     console.log(canExecResult);
   });
