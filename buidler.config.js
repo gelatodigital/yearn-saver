@@ -7,9 +7,11 @@ const GelatoCoreLib = require("@gelatonetwork/core");
 // Process Env Variables
 require("dotenv").config();
 const INFURA_ID = process.env.INFURA_ID;
+const ALCHEMY_ID = process.env.ALCHEMY_ID;
 assert.ok(INFURA_ID, "no Infura ID in process.env");
 
-const INSTA_MASTER = "0xfCD22438AD6eD564a1C26151Df73F6B33B817B56";
+// const INSTA_MASTER = "0xfCD22438AD6eD564a1C26151Df73F6B33B817B56";
+const GELATO_EXEC_NETWORK = "0xd70D5fb9582cC3b5B79BBFAECbb7310fd0e3B582";
 
 // ================================= CONFIG =========================================
 module.exports = {
@@ -18,26 +20,20 @@ module.exports = {
     ganache: {
       // Standard config
       url: "http://localhost:8545",
-      fork: `https://mainnet.infura.io/v3/${INFURA_ID}`,
-      unlocked_accounts: [INSTA_MASTER],
+      // fork: `https://mainnet.infura.io/v3/${INFURA_ID}`,
+      fork: `https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_ID}`,
+      // unlocked_accounts: [GELATO_EXEC_NETWORK],
       // Custom
       GelatoCore: "0x1d681d76ce96E4d70a88A00EBbcfc1E47808d0b8",
-      InstaMaster: INSTA_MASTER,
-      InstaIndex: "0x2971AdFa57b20E5a416aE5a708A8655A9c74f723",
-      InstaList: "0x4c8a1BEb8a87765788946D6B19C6C6355194AbEb",
-      InstaConnectors: "0xD6A602C01a023B98Ecfb29Df02FBA380d3B21E0c",
-      InstaAccount: "0x939Daad09fC4A9B8f8A9352A485DAb2df4F4B3F8",
-      ConnectAuth: "0xd1aFf9f2aCf800C876c409100D6F39AEa93Fc3D9",
-      ConnectBasic: "0x6a31c5982C5Bc5533432913cf06a66b6D3333a95",
-      ConnectMaker: "0xac02030d8a8F49eD04b2f52C394D3F901A10F8A9",
-      ConnectCompound: "0x07F81230d73a78f63F0c2A3403AD281b067d28F8",
-      DAI: "0x6b175474e89094c44da98b954eedeac495271d0f",
+      StrategyMKRVaultDAIDelegate: "0x932fc4fd0eEe66F22f1E23fBA74D7058391c0b15",
       DAI_UNISWAP: "0x2a1530C4C41db0B0b2bB646CB5Eb1A67b7158667",
-      CDAI: "0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643",
+      GelatoUserProxyProviderModule:
+        "0x4372692C2D28A8e5E15BC2B91aFb62f5f8812b93",
+      // GelatoExecNetwork: GELATO_EXEC_NETWORK,
     },
   },
   solc: {
-    version: "0.6.12",
+    version: "0.6.10",
     optimizer: { enabled: true },
   },
 };
