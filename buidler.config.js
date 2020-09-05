@@ -12,6 +12,8 @@ assert.ok(INFURA_ID, "no Infura ID in process.env");
 
 // const INSTA_MASTER = "0xfCD22438AD6eD564a1C26151Df73F6B33B817B56";
 const GELATO_EXEC_NETWORK = "0xd70D5fb9582cC3b5B79BBFAECbb7310fd0e3B582";
+const GELATO_EXEC_NODE = "0x4d671cd743027fb5af1b2d2a3ccbafa97b5b1b80";
+// const GELATO_EXEC_NETWORK = "0xd70d5fb9582cc3b5b79bbfaecbb7310fd0e3b582";
 
 // ================================= CONFIG =========================================
 module.exports = {
@@ -22,14 +24,15 @@ module.exports = {
       url: "http://localhost:8545",
       fork: `https://mainnet.infura.io/v3/${INFURA_ID}`,
       // fork: `https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_ID}`,
-      unlocked_accounts: [GELATO_EXEC_NETWORK],
+      unlocked_accounts: [GELATO_EXEC_NETWORK, GELATO_EXEC_NODE],
       // Custom
       GelatoCore: "0x1d681d76ce96E4d70a88A00EBbcfc1E47808d0b8",
       StrategyMKRVaultDAIDelegate: "0x932fc4fd0eEe66F22f1E23fBA74D7058391c0b15",
       DAI_UNISWAP: "0x2a1530C4C41db0B0b2bB646CB5Eb1A67b7158667",
       GelatoUserProxyProviderModule:
         "0x4372692C2D28A8e5E15BC2B91aFb62f5f8812b93",
-      // GelatoExecNetwork: GELATO_EXEC_NETWORK,
+      GelatoExecNetwork: GELATO_EXEC_NETWORK,
+      GelatoExecNode: GELATO_EXEC_NODE,
     },
   },
   solc: {

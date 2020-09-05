@@ -109,7 +109,6 @@ contract GelatoManager {
     // 2. Withdraw ETH from gelato
     function withdrawFunds(uint256 _amount, address payable _receiver)
         public
-        payable
         onlyGovernance
     {
         uint256 realWithdrawAmount = IGelatoProviders(gelatoCore).unprovideFunds(_amount);
@@ -177,16 +176,14 @@ contract GelatoManager {
     }
 
     // 7. Exex Actions
-    function multiExecActions(Action[] calldata _actions) public payable {
+    function execAction(Action calldata _action) external payable {
         require(msg.sender == governance || msg.sender == gelatoCore, "MultiExec: Gov nor GelatoCore");
-        for (uint i = 0; i < _actions.length; i++) {
-            if (_actions[i].operation == Operation.Call)
-                _callAction(_actions[i].addr, _actions[i].data, _actions[i].value);
-            else if (_actions[i].operation == Operation.Delegatecall)
-                _delegatecallAction(address(_actions[i].addr), _actions[i].data);
-            else
-                revert("MultiExec: invalid operation");
-        }
+        if (_action.operation == Operation.Call)
+            _callAction(_action.addr, _action.data, _action.value);
+        else if (_action.operation == Operation.Delegatecall)
+            _delegatecallAction(_action.addr, _action.data);
+        else
+            revert("GelatoUserProxy.execAction: invalid operation");
     }
 
     function _callAction(address _action, bytes calldata _data, uint256 _value)

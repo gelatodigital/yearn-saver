@@ -5,6 +5,8 @@ const bre = require("@nomiclabs/buidler");
 const { ethers } = bre;
 const GelatoCoreLib = require("@gelatonetwork/core");
 const { sleep } = GelatoCoreLib;
+const executoNetworkAbi = require("../pre-compiles/PermissionedExecutors.json")
+  .abi;
 
 // Constants
 
@@ -17,28 +19,43 @@ describe("Setup", function () {
     process.exit(1);
   }
 
-  let userWallet;
+  let gov;
   let userAddress;
   let yearnDegan;
+  let yearnDeganAddress;
   let gelatoCore;
   let conditionYETHStratRepay;
   let yearnSaverBot;
   let executor;
+  let executorAddress;
+  let executorNode;
+  let executorContract;
 
   before(async function () {
     // Get Test Wallet for local testnet
-    [userWallet, yearnDegan] = await ethers.getSigners();
+    [gov, yearnDegan] = await ethers.getSigners();
 
-    userAddress = await userWallet.getAddress();
+    yearnDeganAddress = await yearnDegan.getAddress();
 
     executor = await ethers.provider.getSigner(
       bre.network.config.GelatoExecNetwork
     );
 
+    executorNode = await ethers.provider.getSigner(
+      bre.network.config.GelatoExecNode
+    );
+
+    executorAddress = await executor.getAddress();
+
     // ===== GELATO LOCAL SETUP ==================
     gelatoCore = await ethers.getContractAt(
       GelatoCoreLib.GelatoCore.abi,
       bre.network.config.GelatoCore
+    );
+
+    executorContract = await ethers.getContractAt(
+      executoNetworkAbi,
+      bre.network.config.GelatoExecNetwork
     );
 
     // Deploy ConditionYETHStratRepay to local testnet
@@ -52,7 +69,7 @@ describe("Setup", function () {
     await conditionYETHStratRepay.deployed();
 
     // Deploy YearnSaverBot to local testnet
-    const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot");
+    const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot", gov);
     yearnSaverBot = await YearnSaverBot.deploy(
       gelatoCore.address,
       bre.network.config.StrategyMKRVaultDAIDelegate,
@@ -110,7 +127,7 @@ describe("Setup", function () {
     const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot");
     const yearnSaverBot2 = await YearnSaverBot.deploy(
       gelatoCore.address,
-      mockStrategy.address,
+      bre.network.config.StrategyMKRVaultDAIDelegate,
       [bre.network.config.GelatoUserProxyProviderModule],
       conditionYETHStratRepay2.address
     );
@@ -118,17 +135,17 @@ describe("Setup", function () {
 
     const currentGelatoId = await gelatoCore.currentTaskReceiptId();
     // Get Task Receipt Object from event
-    const topics = gelatoCore.filters.LogTaskSubmitted(currentGelatoId).topics;
-    const filter = {
+    let topics = gelatoCore.filters.LogTaskSubmitted(currentGelatoId).topics;
+    let filter = {
       address: gelatoCore.address.toLowerCase(),
       topics,
     };
 
     let iface = new ethers.utils.Interface(GelatoCoreLib.GelatoCore.abi);
 
-    const logs = await userWallet.provider.getLogs(filter);
+    let logs = await gov.provider.getLogs(filter);
 
-    const log = logs[logs.length - 1];
+    let log = logs[logs.length - 1];
 
     let event = iface.parseLog(log);
 
@@ -160,14 +177,12 @@ describe("Setup", function () {
         gelatoGasPrice
       );
 
-    console.log(canExecResult);
+    // Make Mock Strategy return that repay is necessarey
 
     const setTx = await mockStrategy.setRepayAmount(
       ethers.utils.parseUnits("100", "18")
     );
     await setTx.wait();
-
-    console.log(await mockStrategy.repayAmount());
 
     canExecResult = await gelatoCore
       .connect(executor)
@@ -177,9 +192,62 @@ describe("Setup", function () {
         gelatoGasPrice
       );
 
-    console.log(await executor.getAddress());
-    console.log(bre.network.config.GelatoExecNetwork);
+    expect(canExecResult).to.be.equal("OK");
+
+    // Fund Executor to execute tx's
+
+    await expect(
+      executorContract.connect(executorNode).exec(taskReceipt, {
+        gasPrice: gelatoGasPrice,
+        gasLimit: 6000000,
+      })
+    );
+
+    canExecResult = await gelatoCore
+      .connect(executor)
+      .canExec(
+        taskReceipt,
+        taskReceipt.tasks[0].selfProviderGasLimit,
+        gelatoGasPrice
+      );
 
     console.log(canExecResult);
+
+    // Get Task Receipt Object from event
+    topics = gelatoCore.filters.LogExecSuccess(executorAddress).topics;
+    filter = {
+      address: gelatoCore.address.toLowerCase(),
+      topics,
+    };
+
+    iface = new ethers.utils.Interface(GelatoCoreLib.GelatoCore.abi);
+
+    logs = await gov.provider.getLogs(filter);
+
+    console.log(logs);
+
+    log = logs[logs.length - 1];
+
+    event = iface.parseLog(log);
+
+    const taskReceiptId = event.args.taskReceiptId;
+
+    expect(taskReceiptId).to.be.equal(currentGelatoId);
+  });
+
+  it("#4: Governance should be able to withdraw funds", async function () {
+    // If not governance, tx should revert
+    await expect(
+      yearnSaverBot
+        .connect(yearnDegan)
+        .withdrawFunds(ethers.utils.parseEther("0.5"), yearnDeganAddress)
+    ).to.be.reverted;
+
+    // If not governance, tx should succeed
+    await expect(
+      yearnSaverBot
+        .connect(gov)
+        .withdrawFunds(ethers.utils.parseEther("0.5"), yearnDeganAddress)
+    );
   });
 });

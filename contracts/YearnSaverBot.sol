@@ -11,6 +11,8 @@ import {GelatoManager} from "./GelatoManager.sol";
 
 contract YearnSaverBot is GelatoManager {
 
+    /// @dev Submits a task to gelato which tracks whether yETH CDP debt should be repaid or not
+    /// and repays it automatically when it can
     constructor(
         address _gelatoCore,
         address _yETHStrat,
@@ -25,6 +27,7 @@ contract YearnSaverBot is GelatoManager {
             0xd70D5fb9582cC3b5B79BBFAECbb7310fd0e3B582 // Gelato Executor Network
         )
     {
+        // ConditionYETHStratRepay.sol
         Condition memory condition = Condition({
             inst: _condition,
             data: ""
@@ -32,6 +35,7 @@ contract YearnSaverBot is GelatoManager {
 
         bytes memory repayData = abi.encodeWithSignature("repay()");
 
+        // 0x932fc4fd0eEe66F22f1E23fBA74D7058391c0b15
         Action memory action = Action({
             addr: _yETHStrat,
             data: repayData,
@@ -49,7 +53,7 @@ contract YearnSaverBot is GelatoManager {
         Task memory task = Task({
             conditions: singleCondition,
             actions: singleAction,
-            selfProviderGasLimit: 5000000, // Cap gas limit of tx to 5M
+            selfProviderGasLimit: 0,
             selfProviderGasPriceCeil: 0
         });
 
@@ -58,7 +62,7 @@ contract YearnSaverBot is GelatoManager {
 
         Provider memory provider = Provider({
             addr: address(this),
-            module: IGelatoProviderModule(0x4372692C2D28A8e5E15BC2B91aFb62f5f8812b93)
+            module: IGelatoProviderModule(modules[0])
         });
 
         // Submit the Task to Gelato
