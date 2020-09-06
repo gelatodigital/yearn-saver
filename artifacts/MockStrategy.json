@@ -1,0 +1,59 @@
+{
+  "contractName": "MockStrategy",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_amount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "amount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "repayAmount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "setRepayAmount",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608060405234801561001057600080fd5b506040516101223803806101228339818101604052602081101561003357600080fd5b5051610047816001600160e01b0361004d16565b50610052565b600055565b60c2806100606000396000f3fe6080604052348015600f57600080fd5b5060043610603c5760003560e01c8063aa8c217c146041578063d0efe753146059578063e66d213c14605f575b600080fd5b6047607b565b60408051918252519081900360200190f35b60476081565b607960048036036020811015607357600080fd5b50356087565b005b60005481565b60005490565b60005556fea2646970667358221220a18dfb4ca6e350b349bfcdb52bebe6db37498d42bad8fd663964a1ab1312ccf664736f6c634300060a0033",
+  "deployedBytecode": "0x6080604052348015600f57600080fd5b5060043610603c5760003560e01c8063aa8c217c146041578063d0efe753146059578063e66d213c14605f575b600080fd5b6047607b565b60408051918252519081900360200190f35b60476081565b607960048036036020811015607357600080fd5b50356087565b005b60005481565b60005490565b60005556fea2646970667358221220a18dfb4ca6e350b349bfcdb52bebe6db37498d42bad8fd663964a1ab1312ccf664736f6c634300060a0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

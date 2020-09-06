@@ -43,14 +43,11 @@ contract GelatoManager {
     }
 
     constructor(
-        address _gelatoCore,
-        IGelatoProviderModule[] memory _modules,
-        address _executor
+        address _gelatoCore
     )
         public
         payable
     {
-
         // Set GelatoCore Address
         gelatoCore = _gelatoCore;
 
@@ -60,17 +57,12 @@ contract GelatoManager {
         // Set strategist to Gelato Dev Team
         strategist = msg.sender;
 
-        // Conduct Manager Setup
-        TaskSpec[] memory taskSpecs = new TaskSpec[](0);
-        IGelatoProviders(gelatoCore).multiProvide{value: msg.value } (
-            _executor,
-            taskSpecs,
-            _modules
-        );
     }
 
     // This contract should receive ETH
-    receive() external payable {}
+    receive() external payable {
+        provideFunds();
+    }
 
     function setGelatoCore(address _gelatoCore)
         public

@@ -4,13 +4,11 @@ const { expect } = require("chai");
 const bre = require("@nomiclabs/buidler");
 const { ethers } = bre;
 const GelatoCoreLib = require("@gelatonetwork/core");
-const { sleep } = GelatoCoreLib;
+const { sleep, Operation, DataFlow } = GelatoCoreLib;
 const executoNetworkAbi = require("../pre-compiles/PermissionedExecutors.json")
   .abi;
-
-// Constants
-
-// Contracts
+const conditionAbi = require("../artifacts/ConditionYETHStratRepay.json").abi;
+const gelatoManagerAbi = require("../artifacts/GelatoManager.json").abi;
 
 describe("Setup", function () {
   this.timeout(500000);
@@ -25,11 +23,12 @@ describe("Setup", function () {
   let yearnDeganAddress;
   let gelatoCore;
   let conditionYETHStratRepay;
-  let yearnSaverBot;
+  let gelatoManager;
   let executor;
   let executorAddress;
   let executorNode;
   let executorContract;
+  let sighash;
 
   before(async function () {
     // Get Test Wallet for local testnet
@@ -47,6 +46,10 @@ describe("Setup", function () {
 
     executorAddress = await executor.getAddress();
 
+    gelatoSysAdmin = await ethers.provider.getSigner(
+      bre.network.config.GelatoSysAdmin
+    );
+
     // ===== GELATO LOCAL SETUP ==================
     gelatoCore = await ethers.getContractAt(
       GelatoCoreLib.GelatoCore.abi,
@@ -59,51 +62,83 @@ describe("Setup", function () {
     );
 
     // Deploy ConditionYETHStratRepay to local testnet
-    const ConditionYETHStratRepay = await ethers.getContractFactory(
-      "ConditionYETHStratRepay"
+    conditionYETHStratRepay = await ethers.getContractAt(
+      conditionAbi,
+      bre.network.config.ConditionYETHStratRepay
     );
-    conditionYETHStratRepay = await ConditionYETHStratRepay.deploy(
-      bre.network.config.StrategyMKRVaultDAIDelegate,
-      gelatoCore.address
-    );
-    await conditionYETHStratRepay.deployed();
 
-    // Deploy YearnSaverBot to local testnet
-    const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot", gov);
-    yearnSaverBot = await YearnSaverBot.deploy(
-      gelatoCore.address,
-      bre.network.config.StrategyMKRVaultDAIDelegate,
-      [bre.network.config.GelatoUserProxyProviderModule],
-      conditionYETHStratRepay.address,
-      {
-        value: ethers.utils.parseEther("1"),
-      }
+    // Deploy GelatoManager to local testnet
+    gelatoManager = await ethers.getContractAt(
+      gelatoManagerAbi,
+      bre.network.config.YearnGelatoManager
     );
-    await yearnSaverBot.deployed();
+
+    // submit Task to Gelato
+    // ConditionYETHStratRepay.sol
+    const condition = {
+      inst: conditionYETHStratRepay.address,
+      data: ethers.constants.HashZero,
+    };
+
+    const stratInterface = new ethers.utils.Interface(["function repay()"]);
+
+    sighash = stratInterface.getSighash("repay()");
+
+    // 0x932fc4fd0eEe66F22f1E23fBA74D7058391c0b15
+    const action = {
+      addr: bre.network.config.StrategyMKRVaultDAIDelegate,
+      data: sighash,
+      operation: Operation.Call,
+      dataFlow: DataFlow.None,
+      value: 0,
+      termsOkCheck: false,
+    };
+
+    const task = {
+      conditions: [condition],
+      actions: [action],
+      selfProviderGasLimit: 0,
+      selfProviderGasPriceCeil: 0,
+    };
+
+    const provider = {
+      addr: gelatoManager.address,
+      module: bre.network.config.GelatoUserProxyProviderModule,
+    };
+
+    // Submit the Task to Gelato
+    expect(bre.network.config.GelatoSysAdmin).to.be.equal(
+      await gelatoManager.governance()
+    );
+
+    const submitTx = await gelatoManager
+      .connect(gelatoSysAdmin)
+      .submitTaskCycle(provider, [task], 0, 0);
+    await submitTx.wait();
   });
 
   it("#1: Condition should return: 'ConditionYETHStratRepay: No repay necessary' if Strategy is sufficiently collateralized", async function () {
     const result = await conditionYETHStratRepay.shouldRepay();
-    console.log(result);
+
     expect(result).to.be.equal(false);
   });
 
-  it("#2: Random address can fund YearnSaverBot", async function () {
+  it("#2: Random address can fund GelatoManager", async function () {
     const yearnDeganEthBalance = await yearnDegan.provider.getBalance(
       await yearnDegan.getAddress()
     );
 
     const botGelatoBalancePre = await gelatoCore.providerFunds(
-      yearnSaverBot.address
+      gelatoManager.address
     );
     const newFunds = ethers.utils.parseEther("5");
-    const tx = await yearnSaverBot.connect(yearnDegan).provideFunds({
+    const tx = await gelatoManager.connect(yearnDegan).provideFunds({
       value: newFunds,
     });
     await tx.wait();
 
     const botGelatoBalancePost = await gelatoCore.providerFunds(
-      yearnSaverBot.address
+      gelatoManager.address
     );
     expect(botGelatoBalancePre.add(newFunds)).to.be.equal(botGelatoBalancePost);
   });
@@ -124,14 +159,58 @@ describe("Setup", function () {
     await conditionYETHStratRepay2.deployed();
 
     // Deploy new yearnSaver with Mock Strategy
-    const YearnSaverBot = await ethers.getContractFactory("YearnSaverBot");
-    const yearnSaverBot2 = await YearnSaverBot.deploy(
-      gelatoCore.address,
-      bre.network.config.StrategyMKRVaultDAIDelegate,
-      [bre.network.config.GelatoUserProxyProviderModule],
-      conditionYETHStratRepay2.address
+    const GelatoManager = await ethers.getContractFactory(
+      "GelatoManager",
+      gelatoSysAdmin
     );
-    await yearnSaverBot2.deployed();
+    const gelatoManagerTwo = await GelatoManager.deploy(gelatoCore.address);
+    await gelatoManagerTwo.deployed();
+
+    // Submit Task with New Manager
+    // submit Task to Gelato
+    // ConditionYETHStratRepay.sol
+    const condition = {
+      inst: conditionYETHStratRepay2.address,
+      data: ethers.constants.HashZero,
+    };
+
+    // 0x932fc4fd0eEe66F22f1E23fBA74D7058391c0b15
+    const action = {
+      addr: bre.network.config.StrategyMKRVaultDAIDelegate,
+      data: sighash,
+      operation: Operation.Call,
+      dataFlow: DataFlow.None,
+      value: 0,
+      termsOkCheck: false,
+    };
+
+    const task = {
+      conditions: [condition],
+      actions: [action],
+      selfProviderGasLimit: 0,
+      selfProviderGasPriceCeil: 0,
+    };
+
+    const provider = {
+      addr: gelatoManagerTwo.address,
+      module: bre.network.config.GelatoUserProxyProviderModule,
+    };
+
+    const assignExecTx = await gelatoManagerTwo
+      .connect(gelatoSysAdmin)
+      .assignExecutor(executorAddress);
+
+    await assignExecTx.wait();
+
+    const whitelistProvideModuleTx = await gelatoManagerTwo
+      .connect(gelatoSysAdmin)
+      .addProviderModules([bre.network.config.GelatoUserProxyProviderModule]);
+    await whitelistProvideModuleTx.wait();
+
+    const submitTx = await gelatoManagerTwo
+      .connect(gelatoSysAdmin)
+      .submitTaskCycle(provider, [task], 0, 0);
+    await submitTx.wait();
 
     const currentGelatoId = await gelatoCore.currentTaskReceiptId();
     // Get Task Receipt Object from event
@@ -151,13 +230,9 @@ describe("Setup", function () {
 
     const taskReceipt = event.args.taskReceipt;
 
-    console.log(taskReceipt.userProxy);
-
-    console.log(yearnSaverBot2.address);
-
-    // fund yearnSaverBot2
+    // fund gelatoManagerTwo
     const newFunds = ethers.utils.parseEther("5");
-    const tx = await yearnSaverBot2.connect(yearnDegan).provideFunds({
+    const tx = await gelatoManagerTwo.connect(yearnDegan).provideFunds({
       value: newFunds,
     });
     await tx.wait();
@@ -203,16 +278,6 @@ describe("Setup", function () {
       })
     );
 
-    canExecResult = await gelatoCore
-      .connect(executor)
-      .canExec(
-        taskReceipt,
-        taskReceipt.tasks[0].selfProviderGasLimit,
-        gelatoGasPrice
-      );
-
-    console.log(canExecResult);
-
     // Get Task Receipt Object from event
     topics = gelatoCore.filters.LogExecSuccess(executorAddress).topics;
     filter = {
@@ -223,8 +288,6 @@ describe("Setup", function () {
     iface = new ethers.utils.Interface(GelatoCoreLib.GelatoCore.abi);
 
     logs = await gov.provider.getLogs(filter);
-
-    console.log(logs);
 
     log = logs[logs.length - 1];
 
@@ -238,14 +301,14 @@ describe("Setup", function () {
   it("#4: Governance should be able to withdraw funds", async function () {
     // If not governance, tx should revert
     await expect(
-      yearnSaverBot
+      gelatoManager
         .connect(yearnDegan)
         .withdrawFunds(ethers.utils.parseEther("0.5"), yearnDeganAddress)
     ).to.be.reverted;
 
     // If not governance, tx should succeed
     await expect(
-      yearnSaverBot
+      gelatoManager
         .connect(gov)
         .withdrawFunds(ethers.utils.parseEther("0.5"), yearnDeganAddress)
     );
